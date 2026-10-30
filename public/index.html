@@ -1,43 +1,111 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Minecraft Datapack Lab</title>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minecraft Datapack Lab</title>
 <style>
-:root{color-scheme:dark;--bg:#0b1118;--panel:#121d28;--line:#263747;--muted:#9aafc1;--green:#65d68a;--blue:#69b8ff}
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 75% -10%,#203b50 0,transparent 38%),var(--bg);color:#edf5fb;font:15px Inter,system-ui,sans-serif}
-header{padding:22px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-.brand{display:flex;gap:12px;align-items:center}.cube{font-size:30px}.brand h1{font-size:20px;margin:0}.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}
-main{max-width:1400px;margin:auto;padding:22px;display:grid;grid-template-columns:330px 1fr;gap:18px}.panel{background:linear-gradient(160deg,#162431,#101923);border:1px solid var(--line);border-radius:13px;padding:17px;min-width:0}
-h2{font-size:15px;margin:0 0 13px}.muted{color:var(--muted);font-size:12px;line-height:1.55}.drop{border:1px dashed #54718a;border-radius:10px;padding:20px;text-align:center;background:#0d1721;margin:12px 0}.drop input{max-width:100%;font-size:12px}
-button{background:#244b68;color:#f4f9ff;border:1px solid #3a6c91;border-radius:8px;padding:10px 13px;cursor:pointer;font-weight:650}button:hover{background:#2c6087}button.secondary{background:#1b2936;border-color:#334758}button:disabled{opacity:.5;cursor:not-allowed}
-.row{display:flex;gap:8px;flex-wrap:wrap}.field{margin:15px 0}.field label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}input[type=text]{width:100%;background:#0a131c;color:#fff;border:1px solid var(--line);border-radius:7px;padding:10px}
-#world{height:490px;background:linear-gradient(#172d3d,#0b121a);border-radius:10px;border:1px solid var(--line);overflow:hidden;position:relative}canvas{width:100%;height:100%;display:block}.worldhint{position:absolute;bottom:10px;left:12px;color:#b6c9d7;font-size:11px;background:#0a111acc;padding:6px 8px;border-radius:5px}
-.workspace{display:grid;grid-template-columns:1fr 1fr;gap:18px}.wide{grid-column:1/-1}.functions{max-height:175px;overflow:auto}.fn{padding:7px 9px;border:1px solid var(--line);border-radius:6px;margin:5px 0;cursor:pointer;font:12px ui-monospace,monospace}.fn:hover{border-color:var(--blue)}.logs{height:190px;overflow:auto;background:#080e14;border-radius:8px;padding:10px;font:11px ui-monospace,monospace}.log{padding:4px 0;border-bottom:1px solid #1b2935;overflow-wrap:anywhere}.success{color:var(--green)}.error{color:#ff8585}.warning{color:#ffd27a}.info{color:#b8d6f1}
-.stats{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.stat{background:#0c1721;border:1px solid var(--line);border-radius:7px;padding:8px 11px;font-size:12px;color:var(--muted)}.stat b{color:white;font-size:16px;display:block}.status{color:var(--green);font-size:12px}.tag{border:1px solid #38536a;border-radius:99px;padding:5px 9px;color:#b8d6f1;font-size:11px}
-@media(max-width:900px){main{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}#world{height:380px}}
-</style></head><body>
-<header><div class="brand"><div class="cube">🧱</div><div><h1>Minecraft Datapack Lab</h1><p>Upload · Execute · Inspect · Debug</p></div></div><div class="row"><span class="tag">Browser sandbox</span><span class="tag">MCP endpoint: /mcp</span></div></header>
+:root{color-scheme:dark;--bg:#0a1118;--panel:#121e29;--line:#26394a;--muted:#9db0c0;--text:#eef6fc;--green:#62d68a;--blue:#73baff;--red:#ff8d8d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px Inter,system-ui,Arial,sans-serif}
+header{padding:20px 24px;border-bottom:1px solid var(--line);background:#0e1822;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+h1{font-size:21px;margin:0 0 5px}header p,.muted{color:var(--muted);margin:0;font-size:12px}
+main{max-width:1500px;margin:auto;padding:18px;display:grid;grid-template-columns:minmax(280px,350px) 1fr;gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;min-width:0}
+h2{font-size:14px;margin:0 0 12px;color:#dceaf5}
+button,.filelabel{border:0;border-radius:8px;padding:10px 13px;background:#267c52;color:white;font-weight:700;cursor:pointer;font-size:13px}
+button.secondary{background:#293e50}button:disabled{opacity:.5;cursor:wait}
+input,select{width:100%;background:#0b151e;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:10px;margin:6px 0 10px}
+input[type=file]{font-size:12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1}
+#viewer{height:540px;min-height:360px;background:#0a141e;border:1px solid var(--line);border-radius:9px;overflow:hidden;position:relative}
+#world{width:100%;height:100%;display:block}
+.overlay{position:absolute;top:12px;left:12px;background:#07111bd9;border:1px solid #31495d;border-radius:7px;padding:8px 10px;font-size:12px;color:#d8e8f4;pointer-events:none}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.stat{background:#0b151e;border:1px solid var(--line);padding:10px;border-radius:8px}.stat b{display:block;font-size:20px}.stat span{color:var(--muted);font-size:11px}
+#functions,#logs{max-height:260px;overflow:auto;background:#0b151e;border:1px solid var(--line);border-radius:8px;padding:8px}
+.fn{padding:7px;border-bottom:1px solid #20313f;cursor:pointer;font:12px ui-monospace,monospace;overflow-wrap:anywhere}.fn:hover{background:#1a2c3b}
+.log{padding:6px 4px;border-bottom:1px solid #1d2d3a;font:12px ui-monospace,monospace;overflow-wrap:anywhere}.success{color:var(--green)}.error{color:var(--red)}.warning{color:#ffd27a}
+code{color:#a9d5ff;overflow-wrap:anywhere}.small{font-size:11px;color:var(--muted);line-height:1.5}
+.status{font-size:12px;color:var(--green);min-height:18px;margin-top:8px}
+a{color:var(--blue)}@media(max-width:850px){main{grid-template-columns:1fr}#viewer{height:430px}.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header><div><h1>⛏ Minecraft Datapack Lab</h1><p>Upload, inspect, execute and preview datapack functions in a browser-based sandbox.</p></div><div class="small">Sandbox engine v3 · Java-style command preview</div></header>
 <main>
-<aside class="panel"><h2>Datapack workspace</h2><p class="muted">Upload a Java Edition datapack ZIP. The lab reads its functions and runs the supported preview commands in an isolated world model.</p>
-<div class="drop"><div style="font-size:28px">📦</div><p><b>Choose datapack ZIP</b></p><input id="file" type="file" accept=".zip,application/zip"><p class="muted">Maximum 20 MB · include pack.mcmeta</p></div>
-<div class="row"><button id="upload">Upload datapack</button><button id="reset" class="secondary">Reset world</button></div>
-<div class="field"><label>Function to run</label><input id="fn" type="text" placeholder="example:build"></div><div class="row"><button id="run">▶ Run function</button><button id="tick" class="secondary">Run tick functions</button></div>
-<div class="field"><label>Loaded functions</label><div id="functions" class="functions muted">No datapack loaded yet.</div></div>
-<div class="stats"><div class="stat"><b id="blockCount">0</b>Blocks</div><div class="stat"><b id="entityCount">0</b>Entities</div><div class="stat"><b id="functionCount">0</b>Functions</div></div>
-<p class="muted">Expanded preview: function, execute (as/at/positioned/if block/if score/run), setblock, fill, clone, summon, kill, tag, scoreboard, gamerule, time, weather and difficulty. Many Java features still require a real game engine.</p>
+<aside>
+<section class="panel">
+<h2>1 · Load a datapack</h2>
+<input id="file" type="file" accept=".zip,application/zip">
+<button id="upload" style="width:100%">Upload and parse ZIP</button>
+<div id="status" class="status"></div>
+<p class="small">Upload a ZIP containing <code>pack.mcmeta</code> and a <code>data</code> folder. The sandbox reads functions and load/tick tags. It does not run arbitrary code from the ZIP.</p>
+</section>
+<section class="panel" style="margin-top:14px">
+<h2>2 · Run a function</h2>
+<label class="small" for="fn">Namespaced function</label>
+<input id="fn" placeholder="example: mypack:start">
+<div class="row"><button id="run">▶ Run function</button><button id="tick" class="secondary">Run tick tag</button></div>
+<button id="reset" class="secondary" style="width:100%;margin-top:8px">Reset world</button>
+</section>
+<section class="panel" style="margin-top:14px">
+<h2>Functions found</h2><div id="functions" class="small">Upload a datapack to list its functions.</div>
+</section>
+<section class="panel" style="margin-top:14px">
+<h2>AI / MCP connection</h2>
+<p class="small">MCP endpoint for compatible AI tools:</p><p><code id="mcpurl"></code></p>
+<p class="small">Available tools: <code>upload_datapack</code>, <code>list_functions</code>, <code>run_function</code>, <code>run_tick</code>, <code>run_command</code>, <code>get_world_state</code>, <code>reset_world</code>.</p>
+<p class="small">The website and MCP endpoint use the same browser session ID. Sessions are temporary and may reset when the service restarts.</p>
+</section>
 </aside>
-<section class="workspace">
-<div class="panel wide"><div class="row" style="justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">3D world preview</h2><span id="worldStatus" class="status">Waiting for datapack</span></div><div id="world"><canvas id="view"></canvas><div class="worldhint">Drag to rotate · Scroll to zoom · Preview coordinates are shown in logs</div></div></div>
-<div class="panel"><h2>Execution log</h2><div id="logs" class="logs"><div class="muted">No commands executed.</div></div></div>
-<div class="panel"><h2>Connection details</h2><p class="muted">MCP HTTP endpoint for compatible AI clients:</p><p style="font:12px ui-monospace;overflow-wrap:anywhere;color:#8cc8ff" id="mcpurl"></p><p class="muted">Tools: get_sandbox_state, run_function, reset_world. Upload the ZIP in this website first, then the connected AI can run and inspect it.</p><p class="muted">Session is temporary and resets when the server restarts. Do not upload private files or secrets.</p></div>
-</section></main>
-<script>
-const $=id=>document.getElementById(id);let sessionId='default',blocks=[],entities=[],logs=[],functions=[],tickFunctions=[],angle=.65,zoom=1.0,drag=null;
+<section>
+<div class="panel">
+<h2>3 · World preview</h2>
+<div id="viewer"><canvas id="world"></canvas><div class="overlay" id="worldinfo">No blocks yet · upload a datapack and run a function</div></div>
+<div class="stats">
+<div class="stat"><b id="blockCount">0</b><span>Blocks</span></div><div class="stat"><b id="entityCount">0</b><span>Entities</span></div><div class="stat"><b id="functionCount">0</b><span>Functions</span></div><div class="stat"><b id="commandCount">0</b><span>Commands run</span></div>
+</div>
+<p class="small">Drag to rotate · scroll to zoom. The viewer renders simulated blocks, not a live Minecraft client.</p>
+</div>
+<div class="panel" style="margin-top:14px"><h2>Execution log</h2><div id="logs" class="small">No commands executed.</div></div>
+</section>
+</main>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/controls/OrbitControls.js';
+const $=id=>document.getElementById(id);
+const sessionId=localStorage.getItem('mdpl-session')||crypto.randomUUID();
+localStorage.setItem('mdpl-session',sessionId);
 $('mcpurl').textContent=location.origin+'/mcp';
-async function api(url,opts={}){const r=await fetch(url,opts);const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
-function show(s){blocks=s.blocks||[];entities=s.entities||[];logs=s.logs||[];functions=s.functions||[];tickFunctions=s.tickFunctions||[];$('blockCount').textContent=blocks.length;$('entityCount').textContent=entities.length;$('functionCount').textContent=functions.length;$('worldStatus').textContent=blocks.length+' blocks in preview';$('functions').innerHTML='';if(!functions.length)$('functions').textContent='No functions found.';functions.forEach(f=>{const d=document.createElement('div');d.className='fn';d.textContent=f;d.onclick=()=>{$('fn').value=f};$('functions').append(d)});$('logs').innerHTML='';if(!logs.length)$('logs').textContent='No commands executed.';logs.slice().reverse().forEach(l=>{const d=document.createElement('div');d.className='log '+l.level;d.textContent='['+new Date(l.time).toLocaleTimeString()+'] '+l.message;$('logs').append(d)});draw()}
-$('upload').onclick=async()=>{try{const f=$('file').files[0];if(!f)throw Error('Choose a .zip file first.');const fd=new FormData();fd.append('datapack',f);fd.append('sessionId',sessionId);$('upload').disabled=true;const j=await api('/api/upload',{method:'POST',body:fd});show(j.state);$('worldStatus').textContent='Datapack loaded';}catch(e){alert(e.message)}finally{$('upload').disabled=false}};
-$('run').onclick=async()=>{try{const j=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId,function:$('fn').value})});show(j.state)}catch(e){alert(e.message)}};
-$('reset').onclick=async()=>{try{await api('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId})});show({})}catch(e){alert(e.message)}};
-$('tick').onclick=async()=>{try{const tickFns=tickFunctions;if(!tickFns.length)throw Error('No tick function was found in the uploaded datapack.');const j=await api('/api/tick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId,functions:tickFns})});show(j.state)}catch(e){alert(e.message)}};
-function draw(){const c=$('view'),r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=r.width*dpr;c.height=r.height*dpr;const ctx=c.getContext('2d');ctx.scale(dpr,dpr);ctx.clearRect(0,0,r.width,r.height);ctx.fillStyle='#122433';ctx.fillRect(0,0,r.width,r.height);const cx=r.width/2,cy=r.height*.60,scale=zoom*22,cos=Math.cos(angle),sin=Math.sin(angle);const project=(x,y,z)=>({x:cx+(x*cos-z*sin)*scale,y:cy+(x*sin+z*cos)*scale-y*scale*.88});const palette={stone:'#92999f',grass_block:'#568f48',dirt:'#79543a',oak_planks:'#b18a55',glass:'#9dd8dc',bricks:'#98594c',white_concrete:'#d8d8d2',air:'#000'};const sorted=blocks.slice().sort((a,b)=>(a.pos[0]+a.pos[2]+a.pos[1])-(b.pos[0]+b.pos[2]+b.pos[1]));for(const b of sorted){const [x,y,z]=b.pos,p=project(x,y,z),w=scale,h=scale*.5;ctx.fillStyle=palette[b.block.split(':').pop()]||'#778b9b';ctx.strokeStyle='#1b2b37';ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+w,p.y-h*.5);ctx.lineTo(p.x,p.y-h);ctx.lineTo(p.x-w,p.y-h*.5);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#526473';ctx.beginPath();ctx.moveTo(p.x-w,p.y-h*.5);ctx.lineTo(p.x,p.y-h);ctx.lineTo(p.x,p.y);ctx.lineTo(p.x-w,p.y+h*.5);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#344958';ctx.beginPath();ctx.moveTo(p.x+w,p.y-h*.5);ctx.lineTo(p.x,p.y);ctx.lineTo(p.x,p.y+h*.5);ctx.lineTo(p.x+w,p.y);ctx.closePath();ctx.fill();ctx.stroke()}ctx.fillStyle='#d7eaff';ctx.font='12px system-ui';ctx.fillText('Preview blocks: '+blocks.length,14,22);ctx.fillText('Entities: '+entities.length,14,40)}
-$('view').addEventListener('pointerdown',e=>{drag={x:e.clientX,a:angle};$('view').setPointerCapture(e.pointerId)});$('view').addEventListener('pointermove',e=>{if(drag){angle=drag.a+(e.clientX-drag.x)*.01;draw()}});$('view').addEventListener('pointerup',()=>drag=null);$('view').addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.4,Math.min(2.5,zoom-e.deltaY*.001));draw()},{passive:false});window.addEventListener('resize',draw);draw();
-</script></body></html>
+let state={blocks:[],entities:[],functions:[],logs:[],runCount:0};
+async function api(url,options={}){const response=await fetch(url,options);const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data;}
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x0a141e);
+const camera=new THREE.PerspectiveCamera(55,1,.1,2000);camera.position.set(22,20,26);
+const renderer=new THREE.WebGLRenderer({canvas:$('world'),antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,4,0);controls.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xc8e5ff,0x34402d,2));
+const sun=new THREE.DirectionalLight(0xffffff,2.1);sun.position.set(30,60,20);sun.castShadow=true;scene.add(sun);
+const grid=new THREE.GridHelper(80,80,0x456175,0x263c4c);grid.position.y=-.51;scene.add(grid);
+const worldGroup=new THREE.Group();scene.add(worldGroup);
+const colors={stone:0x92999f,grass_block:0x57924c,dirt:0x79543a,oak_planks:0xb18a55,glass:0x9dd8dc,bricks:0x98594c,white_concrete:0xd8d8d2,oak_log:0x765331,cobblestone:0x777d80,sand:0xd8c58b,water:0x397fc4};
+function resize(){const box=$('viewer').getBoundingClientRect();renderer.setSize(box.width,box.height,false);camera.aspect=box.width/box.height;camera.updateProjectionMatrix();}
+window.addEventListener('resize',resize);resize();
+function renderWorld(){while(worldGroup.children.length){const child=worldGroup.children.pop();child.geometry?.dispose();if(child.material){if(Array.isArray(child.material))child.material.forEach(m=>m.dispose());else child.material.dispose();}}
+const cap=25000;const shown=state.blocks.slice(0,cap);
+const groups=new Map();
+for(const b of shown){const name=String(b.block).split(':').pop().split('[')[0];if(!groups.has(name))groups.set(name,[]);groups.get(name).push(b);}
+for(const [name,items] of groups){const material=new THREE.MeshStandardMaterial({color:colors[name]||0x8495a3,roughness:.85});const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),material,items.length);const dummy=new THREE.Object3D();items.forEach((item,i)=>{dummy.position.set(item.pos[0],item.pos[1],item.pos[2]);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);});mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;worldGroup.add(mesh);}
+$('blockCount').textContent=state.blocks.length;$('entityCount').textContent=state.entities.length;$('functionCount').textContent=state.functions.length;$('commandCount').textContent=state.runCount||0;
+$('worldinfo').textContent=state.blocks.length+' blocks · '+state.entities.length+' entities'+(state.blocks.length>cap?' · showing first '+cap:'');
+}
+function show(s){state=s||{};state.blocks=state.blocks||[];state.entities=state.entities||[];state.functions=state.functions||[];state.logs=state.logs||[];renderWorld();
+$('functions').innerHTML='';if(!state.functions.length)$('functions').textContent='No functions found.';state.functions.forEach(name=>{const div=document.createElement('div');div.className='fn';div.textContent=name;div.onclick=()=>{$('fn').value=name};$('functions').append(div);});
+$('logs').innerHTML='';if(!state.logs.length)$('logs').textContent='No commands executed.';state.logs.slice().reverse().forEach(item=>{const div=document.createElement('div');div.className='log '+item.level;div.textContent='['+new Date(item.time).toLocaleTimeString()+'] '+item.message;$('logs').append(div);});
+}
+$('upload').onclick=async()=>{try{const file=$('file').files[0];if(!file)throw new Error('Choose a datapack ZIP first.');const form=new FormData();form.append('datapack',file);form.append('sessionId',sessionId);$('upload').disabled=true;$('status').textContent='Uploading and parsing…';const result=await api('/api/upload',{method:'POST',body:form});show(result.state);$('status').textContent='Datapack loaded successfully.';}catch(e){$('status').textContent=e.message;}finally{$('upload').disabled=false;}};
+$('run').onclick=async()=>{try{const fn=$('fn').value.trim();if(!fn)throw new Error('Choose a function from the list or enter its namespaced ID.');const result=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId,function:fn})});show(result.state);}catch(e){$('status').textContent=e.message;}};
+$('tick').onclick=async()=>{try{const result=await api('/api/tick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId})});show(result.state);}catch(e){$('status').textContent=e.message;}};
+$('reset').onclick=async()=>{try{await api('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId})});show({});$('status').textContent='World reset.';}catch(e){$('status').textContent=e.message;}};
+api('/api/state?sessionId='+encodeURIComponent(sessionId)).then(show).catch(()=>{});
+renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});
+</script>
+</body></html>
