@@ -1,131 +1,46 @@
-const express = require('express');
-const multer = require('multer');
-const JSZip = require('jszip');
-const path = require('path');
-
-const app = express();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-app.use(express.json({ limit: '25mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-
-const sessions = new Map();
-const LIMIT = 12000;
-function fresh() { return { packs: [], blocks: new Map(), logs: [], functions: new Map(), scoreboards: new Map(), entities: [], runCount: 0 }; }
-function log(s, level, message) { s.logs.push({ time: new Date().toISOString(), level, message }); if (s.logs.length > 500) s.logs.shift(); }
-function parseMcfunction(text) { return text.split(/\r?\n/).map((line, i) => ({ line: i + 1, command: line.trim() })).filter(x => x.command && !x.command.startsWith('#')); }
-function blockKey(x,y,z) { return x + ',' + y + ',' + z; }
-function parsePos(raw, origin) {
-  const parts = raw.split(',');
-  if (parts.length !== 3) throw new Error('Expected three coordinates');
-  return parts.map((v,i) => v.startsWith('~') ? origin[i] + (v.length > 1 ? Number(v.slice(1)) : 0) : Number(v));
-}
-function runFunction(s, name, origin=[0,64,0], stack=[]) {
-  if (stack.length > 32) { log(s,'error','Function recursion limit reached'); return; }
-  if (s.runCount > LIMIT) { log(s,'error','Command limit reached; stopped safely'); return; }
-  const commands = s.functions.get(name);
-  if (!commands) { log(s,'error','Function not found: ' + name); return; }
-  stack = [...stack, name];
-  for (const item of commands) {
-    if (++s.runCount > LIMIT) break;
-    const c = item.command;
-    try {
-      if (c.startsWith('say ')) log(s,'info',c.slice(4));
-      else if (c.startsWith('tellraw ')) log(s,'info','tellraw: ' + c.slice(8));
-      else if (c.startsWith('setblock ')) {
-        const m = c.match(/^setblock\s+(\S+)\s+(\S+)(?:\s+(\S+))?/);
-        if (!m) throw new Error('Invalid setblock syntax');
-        const p = parsePos(m[1],origin); s.blocks.set(blockKey(...p),m[2]); log(s,'success','Placed ' + m[2] + ' at ' + p.join(' '));
-      } else if (c.startsWith('fill ')) {
-        const m = c.match(/^fill\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(\S+))?/);
-        if (!m) throw new Error('Invalid fill syntax');
-        const a=parsePos(m[1],origin), b=parsePos(m[2],origin), block=m[3];
-        const lo=a.map((v,i)=>Math.min(v,b[i])), hi=a.map((v,i)=>Math.max(v,b[i]));
-        const volume=(hi[0]-lo[0]+1)*(hi[1]-lo[1]+1)*(hi[2]-lo[2]+1);
-        if (volume>50000) throw new Error('Fill exceeds 50,000 block safety limit');
-        for(let x=lo[0];x<=hi[0];x++) for(let y=lo[1];y<=hi[1];y++) for(let z=lo[2];z<=hi[2];z++) s.blocks.set(blockKey(x,y,z),block);
-        log(s,'success','Filled ' + volume + ' blocks with ' + block);
-      } else if (c.startsWith('function ')) runFunction(s,c.slice(9).trim(),origin,stack);
-      else if (c.startsWith('setworldspawn')) log(s,'info','setworldspawn recognized (spawn metadata not yet simulated)');
-      else if (c.startsWith('gamerule ')) log(s,'info','gamerule recognized (rule state not yet simulated)');
-      else if (c.startsWith('summon ')) {
-        const m=c.match(/^summon\s+(\S+)(?:\s+(\S+)\s+(\S+)\s+(\S+))?/);
-        if(!m) throw new Error('Invalid summon syntax');
-        const p=m[2]?[Number(m[2]),Number(m[3]),Number(m[4])]:origin;
-        s.entities.push({type:m[1],x:p[0],y:p[1],z:p[2]}); log(s,'success','Summoned ' + m[1]);
-      } else if (c.startsWith('execute ')) log(s,'warning','execute is not implemented yet: ' + c);
-      else if (c.startsWith('scoreboard ')) log(s,'warning','scoreboard is not implemented yet: ' + c);
-      else log(s,'warning','Unsupported command at line ' + item.line + ': ' + c);
-    } catch(e) { log(s,'error','Line ' + item.line + ': ' + e.message); }
-  }
-}
-async function loadZip(buffer,s) {
-  const zip=await JSZip.loadAsync(buffer);
-  let meta=false, found=0;
-  for(const [file,entry] of Object.entries(zip.files)) {
-    if(entry.dir) continue;
-    if(file.endsWith('/pack.mcmeta') || file==='pack.mcmeta') meta=true;
-    const match=file.match(/^data\/([^/]+)\/functions?\/(.+)\.mcfunction$/);
-    if(match) {
-      const body=await entry.async('string');
-      const name=match[1]+':'+match[2].replaceAll('/','/');
-      s.functions.set(name,parseMcfunction(body)); found++;
-    }
-  }
-  if(!meta) throw new Error('pack.mcmeta was not found. Upload a valid datapack ZIP.');
-  if(!found) log(s,'warning','No .mcfunction files found in the ZIP.');
-  s.packs.push({name:'Uploaded datapack',functions:found});
-  log(s,'success','Loaded datapack: ' + found + ' function(s)');
-  for(const [file,entry] of Object.entries(zip.files)) {
-    if(entry.dir) continue;
-    const m=file.match(/^data\/([^/]+)\/tags\/functions\/(load|tick)\.json$/);
-    if(m) {
-      try {
-        const json=JSON.parse(await entry.async('string'));
-        for(const f of json.values||[]) if(typeof f==='string') {
-          if(m[2]==='load') runFunction(s,f);
-          if(m[2]==='tick') log(s,'info','Tick function registered: '+f+' (run manually in this preview)');
-        }
-      } catch(e) { log(s,'error','Invalid function tag JSON: '+e.message); }
-    }
-  }
-}
-function state(s) { return { packs:s.packs, blocks:[...s.blocks.entries()].map(([key,block])=>({pos:key.split(',').map(Number),block})), entities:s.entities, logs:s.logs, functions:[...s.functions.keys()], runCount:s.runCount }; }
-
-app.get('/api/health',(req,res)=>res.json({ok:true,name:'Minecraft Datapack Lab',engine:'browser-preview-subset',mcp:'/mcp'}));
-app.post('/api/reset',(req,res)=>{ const id=req.body.sessionId||'default'; sessions.set(id,fresh()); res.json({ok:true,sessionId:id}); });
-app.post('/api/upload',upload.single('datapack'),async(req,res)=>{
-  try { if(!req.file) return res.status(400).json({error:'Choose a datapack .zip first'}); const id=req.body.sessionId||'default'; const s=fresh(); await loadZip(req.file.buffer,s); sessions.set(id,s); res.json({ok:true,sessionId:id,state:state(s)}); }
-  catch(e){ res.status(400).json({error:e.message}); }
-});
-app.post('/api/run',(req,res)=>{
-  const id=req.body.sessionId||'default', s=sessions.get(id); if(!s) return res.status(404).json({error:'Upload a datapack first'});
-  const name=req.body.function; if(!name) return res.status(400).json({error:'Function name required'});
-  s.runCount=0; runFunction(s,name,Array.isArray(req.body.origin)?req.body.origin:[0,64,0]); res.json({ok:true,state:state(s)});
-});
-app.get('/api/state',(req,res)=>{ const s=sessions.get(req.query.sessionId||'default'); if(!s) return res.json({packs:[],blocks:[],entities:[],logs:[],functions:[],runCount:0}); res.json(state(s)); });
-
-// Minimal MCP Streamable HTTP JSON-RPC endpoint. Tools are intentionally limited to this sandbox.
-app.post('/mcp',async(req,res)=>{
-  const msg=req.body||{}, id=msg.id??null, method=msg.method;
-  const reply=(result)=>res.json({jsonrpc:'2.0',id,result});
-  const error=(code,message)=>res.status(200).json({jsonrpc:'2.0',id,error:{code,message}});
-  if(method==='initialize') return reply({protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'minecraft-datapack-lab',version:'1.0.0'}});
-  if(method==='notifications/initialized') return res.status(202).end();
-  if(method==='ping') return reply({});
-  if(method==='tools/list') return reply({tools:[
-    {name:'get_sandbox_state',description:'Get current preview world, loaded functions and execution logs.',inputSchema:{type:'object',properties:{sessionId:{type:'string'}},additionalProperties:false}},
-    {name:'run_function',description:'Run a loaded datapack function by namespaced ID, such as example:build.',inputSchema:{type:'object',properties:{sessionId:{type:'string'},function:{type:'string'},origin:{type:'array',items:{type:'number'},minItems:3,maxItems:3}},required:['function'],additionalProperties:false}},
-    {name:'reset_world',description:'Clear the preview world and logs.',inputSchema:{type:'object',properties:{sessionId:{type:'string'}},additionalProperties:false}}
-  ]});
-  if(method==='tools/call') {
-    const t=msg.params?.name, a=msg.params?.arguments||{}, sid=a.sessionId||'default'; let s=sessions.get(sid);
-    if(t==='get_sandbox_state') return reply({content:[{type:'text',text:JSON.stringify(state(s||fresh()))}]});
-    if(t==='reset_world'){sessions.set(sid,fresh());return reply({content:[{type:'text',text:'Preview world reset.'} ]});}
-    if(t==='run_function'){if(!s)return error(-32004,'No datapack loaded for this session. Upload it through the website first.'); s.runCount=0; runFunction(s,a.function,Array.isArray(a.origin)?a.origin:[0,64,0]); return reply({content:[{type:'text',text:JSON.stringify(state(s))}]});}
-    return error(-32602,'Unknown tool: '+t);
-  }
-  return error(-32601,'Method not found');
-});
-app.get('/mcp',(req,res)=>res.json({name:'Minecraft Datapack Lab MCP',endpoint:'/mcp',transport:'HTTP JSON-RPC',method:'POST'}));
-const port=process.env.PORT||3000;
-app.listen(port,'0.0.0.0',()=>console.log('Minecraft Datapack Lab listening on '+port));
+const express=require('express');
+const multer=require('multer');
+const JSZip=require('jszip');
+const path=require('path');
+const app=express(),upload=multer({storage:multer.memoryStorage(),limits:{fileSize:30*1024*1024}});
+app.use(express.json({limit:'40mb'}));app.use(express.static(path.join(__dirname,'public')));
+const sessions=new Map(),MAX_COMMANDS=30000,MAX_BLOCKS=150000;
+const fresh=()=>({packs:[],blocks:new Map(),logs:[],functions:new Map(),objectives:new Map(),scores:new Map(),entities:[],gamerules:{},time:0,weather:'clear',difficulty:'normal',worldspawn:[0,64,0],runCount:0,scheduled:[]});
+const log=(s,l,m)=>{s.logs.push({time:new Date().toISOString(),level:l,message:String(m)});if(s.logs.length>1000)s.logs.shift()};
+const key=(x,y,z)=>String(x)+','+y+','+z;
+const pos=(a,o)=>a.map((v,i)=>v.startsWith('~')?o[i]+(v.length>1?Number(v.slice(1)):0):Number(v));
+function tokenize(str){const out=[];let cur='',q=null,depth=0;for(let i=0;i<str.length;i++){const c=str[i];if(q){cur+=c;if(c===q&&str[i-1]!=='\\')q=null;continue}if(c==='"'||c==="'"){q=c;cur+=c;continue}if(c==='['||c==='{')depth++;if(c===']'||c==='}')depth--;if(/\s/.test(c)&&depth===0){if(cur){out.push(cur);cur=''}}else cur+=c}if(cur)out.push(cur);return out}
+function select(s,sel){if(!sel||!sel.startsWith('@'))return[];const type=sel[1],inside=sel.match(/\[(.*)\]/)?.[1]||'',args={};for(const p of tokenize(inside)){const i=p.indexOf('=');if(i>0)args[p.slice(0,i)]=p.slice(i+1)}let list=type==='e'?s.entities.slice():[];if(args.type)list=list.filter(e=>e.type===args.type);if(args.tag)list=list.filter(e=>(e.tags||[]).includes(args.tag));if(args.limit)list=list.slice(0,Number(args.limit));return list}
+const sk=(h,o)=>h+'|'+o,score=(s,h,o)=>s.scores.get(sk(h,o))??0,setScore=(s,h,o,n)=>s.scores.set(sk(h,o),Math.trunc(n));
+function put(s,p,b){if(s.blocks.size>=MAX_BLOCKS&&!s.blocks.has(key(...p)))throw Error('World block limit reached');if(b==='air'||b==='minecraft:air')s.blocks.delete(key(...p));else s.blocks.set(key(...p),b)}
+function run(s,name,ctx,stack=[]){if(stack.length>64){log(s,'error','Function recursion limit exceeded');return}const lines=s.functions.get(name);if(!lines){log(s,'error','Function not found: '+name);return}for(const item of lines){if(++s.runCount>MAX_COMMANDS){log(s,'error','Command execution limit reached');return}try{command(s,item.command,ctx,[...stack,name])}catch(e){log(s,'error',name+':'+item.line+' '+e.message)}}}
+function command(s,line,ctx,stack){const t=tokenize(line);if(!t.length)return;const cmd=t[0],o=ctx.pos,entity=ctx.entity;
+if(cmd==='execute'){let i=1,cs=[{...ctx}];while(i<t.length&&t[i]!=='run'){const sub=t[i++];if(sub==='as'){const sel=t[i++],targets=sel==='@s'?(entity?[entity]:[]):select(s,sel);cs=cs.flatMap(c=>targets.map(e=>({...c,entity:e})));}else if(sub==='at'){const sel=t[i++],targets=sel==='@s'?(entity?[entity]:[]):select(s,sel);cs=cs.flatMap(c=>targets.map(e=>({...c,pos:[e.x,e.y,e.z]})));}else if(sub==='positioned'){const p=t.slice(i,i+3);i+=3;cs=cs.map(c=>({...c,pos:pos(p,c.pos)}));}else if(sub==='if'||sub==='unless'){const neg=sub==='unless',kind=t[i++];let ok=false;if(kind==='block'){const p=pos(t.slice(i,i+3),o);i+=3;ok=(s.blocks.get(key(...p))||'minecraft:air')===t[i++]}else if(kind==='score'){const h=t[i++],ob=t[i++],op=t[i++],h2=t[i++],ob2=t[i++],a=score(s,h,ob),b=score(s,h2,ob2);ok=op==='='?a===b:op==='>='?a>=b:op==='>'?a>b:op==='<='?a<=b:op==='<'?a<b:false}else if(kind==='entity'){const sel=t[i++];ok=sel==='@s'?!!entity:select(s,sel).length>0}else throw Error('execute condition not supported: '+kind);cs=cs.filter(c=>neg?!ok:ok)}else if(sub==='align')i++;else if(sub==='anchored')i++;else if(sub==='rotated')i+=2;else throw Error('execute subcommand not supported: '+sub)}if(t[i]!=='run')throw Error('Expected run');const nested=line.slice(line.indexOf(' run ')+5);for(const c of cs)command(s,nested,c,stack);return}
+if(cmd==='function'){run(s,t[1],ctx,stack);return}
+if(['say','me','tellraw','title','tell','msg'].includes(cmd)){log(s,'info',cmd+': '+t.slice(1).join(' '));return}
+if(cmd==='setblock'){if(t.length<5)throw Error('Usage: setblock x y z block');const p=pos(t.slice(1,4),o);put(s,p,t[4]);log(s,'success','setblock '+p.join(' ')+' '+t[4]);return}
+if(cmd==='fill'){if(t.length<8)throw Error('Usage: fill x1 y1 z1 x2 y2 z2 block');const a=pos(t.slice(1,4),o),b=pos(t.slice(4,7),o),block=t[7],mode=t[8]||'replace',lo=a.map((v,i)=>Math.min(v,b[i])),hi=a.map((v,i)=>Math.max(v,b[i])),volume=(hi[0]-lo[0]+1)*(hi[1]-lo[1]+1)*(hi[2]-lo[2]+1);if(volume>50000)throw Error('Fill exceeds 50,000 block safety limit');let n=0;for(let x=lo[0];x<=hi[0];x++)for(let y=lo[1];y<=hi[1];y++)for(let z=lo[2];z<=hi[2];z++){const p=[x,y,z],old=s.blocks.get(key(...p))||'minecraft:air';if(mode==='keep'&&old!=='minecraft:air')continue;if(mode==='outline'&&x!==lo[0]&&x!==hi[0]&&y!==lo[1]&&y!==hi[1]&&z!==lo[2]&&z!==hi[2])continue;if(mode==='hollow'&&x!==lo[0]&&x!==hi[0]&&y!==lo[1]&&y!==hi[1]&&z!==lo[2]&&z!==hi[2])put(s,p,'air');else put(s,p,block);n++}log(s,'success','fill affected '+n+' blocks');return}
+if(cmd==='clone'){const a=pos(t.slice(1,4),o),b=pos(t.slice(4,7),o),d=pos(t.slice(7,10),o),lo=a.map((v,i)=>Math.min(v,b[i])),hi=a.map((v,i)=>Math.max(v,b[i])),copy=[];for(let x=lo[0];x<=hi[0];x++)for(let y=lo[1];y<=hi[1];y++)for(let z=lo[2];z<=hi[2];z++){const v=s.blocks.get(key(x,y,z));if(v)copy.push([d[0]+x-lo[0],d[1]+y-lo[1],d[2]+z-lo[2],v])}for(const [x,y,z,v] of copy)put(s,[x,y,z],v);log(s,'success','cloned '+copy.length+' blocks');return}
+if(cmd==='summon'){const p=t.length>=5?pos(t.slice(2,5),o):o;s.entities.push({id:'e'+(s.entities.length+1),type:t[1],x:p[0],y:p[1],z:p[2],tags:[]});log(s,'success','summoned '+t[1]);return}
+if(cmd==='kill'){const targets=t[1]==='@s'?(entity?[entity]:[]):select(s,t[1]||'@e');s.entities=s.entities.filter(e=>!targets.includes(e));log(s,'success','removed '+targets.length+' entities');return}
+if(cmd==='tag'){const targets=t[1]==='@s'?(entity?[entity]:[]):select(s,t[1]);for(const e of targets){e.tags=e.tags||[];if(t[2]==='add'&&!e.tags.includes(t[3]))e.tags.push(t[3]);if(t[2]==='remove')e.tags=e.tags.filter(x=>x!==t[3]);if(t[2]==='list')log(s,'info',e.tags.join(', '))}return}
+if(cmd==='scoreboard'){if(t[1]==='objectives'){if(t[2]==='add'){s.objectives.set(t[3],{criterion:t[4],display:t.slice(5).join(' ')});log(s,'success','objective added '+t[3])}else if(t[2]==='remove')s.objectives.delete(t[3]);else if(t[2]==='list')log(s,'info','Objectives: '+[...s.objectives.keys()].join(', '));return}if(t[1]==='players'){const a=t[2],h=t[3],ob=t[4];if(['set','add','remove'].includes(a)){const n=Number(t[5]);setScore(s,h,ob,a==='set'?n:score(s,h,ob)+(a==='add'?n:-n));log(s,'success',h+' '+ob+' = '+score(s,h,ob))}else if(a==='get')log(s,'info',h+' '+ob+' = '+score(s,h,ob));else if(a==='reset')s.scores.delete(sk(h,ob));else if(a==='operation'){const op=t[5],b=score(s,t[6],t[7]),v=score(s,h,ob);setScore(s,h,ob,op==='+='?v+b:op==='-='?v-b:op==='*='?v*b:op==='/='&&b?Math.trunc(v/b):op==='='?b:v)}return}}
+if(cmd==='gamerule'){s.gamerules[t[1]]=t[2];log(s,'info','gamerule '+t[1]+' = '+t[2]);return}
+if(cmd==='time'){s.time=t[1]==='add'?s.time+Number(t[2]):t[2]==='day'?1000:t[2]==='noon'?6000:t[2]==='night'?13000:t[2]==='midnight'?18000:Number(t[2]);log(s,'info','time = '+s.time);return}
+if(cmd==='weather'){s.weather=t[1]||'clear';log(s,'info','weather = '+s.weather);return}
+if(cmd==='difficulty'){s.difficulty=t[1];return}
+if(cmd==='setworldspawn'){s.worldspawn=t.length>=4?pos(t.slice(1,4),o):o;return}
+if(['data','advancement','loot','particle','playsound','effect','attribute','bossbar','team','worldborder','forceload','place','jigsaw','structure','schedule','tp','teleport'].includes(cmd)){log(s,'warning',cmd+' recognized but not fully simulated');return}
+throw Error('Unknown/unsupported command: '+cmd)}
+function parseFn(src){return src.split(/\r?\n/).map((v,i)=>({line:i+1,command:v.trim()})).filter(x=>x.command&&!x.command.startsWith('#'))}
+async function loadZip(buf,s){const zip=await JSZip.loadAsync(buf);let meta=false,n=0;for(const [file,e] of Object.entries(zip.files)){if(e.dir)continue;const clean=file.replace(/^[^/]+\/(?=pack\.mcmeta|data\/)/,'');if(clean==='pack.mcmeta')meta=true;const m=clean.match(/^data\/([^/]+)\/functions?\/(.+)\.mcfunction$/);if(m){s.functions.set(m[1]+':'+m[2],parseFn(await e.async('string')));n++}}if(!meta)throw Error('pack.mcmeta missing; upload a valid datapack ZIP');s.packs.push({functions:n});log(s,'success','Loaded '+n+' functions');for(const [file,e] of Object.entries(zip.files)){if(e.dir)continue;const clean=file.replace(/^[^/]+\/(?=pack\.mcmeta|data\/)/,'');const m=clean.match(/^data\/([^/]+)\/tags\/functions\/load\.json$/);if(m){try{const j=JSON.parse(await e.async('string'));for(const f of j.values||[])run(s,typeof f==='string'?f:f.id,{pos:[0,64,0],entity:null})}catch(err){log(s,'error','load tag: '+err.message)}}}}
+function snap(s){return{packs:s.packs,blocks:[...s.blocks].map(([k,block])=>({pos:k.split(',').map(Number),block})),entities:s.entities,logs:s.logs,functions:[...s.functions.keys()],scores:[...s.scores].map(([key,value])=>({key,value})),objectives:[...s.objectives.keys()],gamerules:s.gamerules,time:s.time,weather:s.weather,difficulty:s.difficulty,worldspawn:s.worldspawn,runCount:s.runCount}}
+app.get('/api/health',(q,r)=>r.json({ok:true,name:'Minecraft Datapack Lab',engine:'extended-preview-engine',mcp:'/mcp',supported:['function','execute as/at/positioned/if block/if score/run','setblock','fill','clone','summon','kill','tag','scoreboard','gamerule','time','weather','difficulty','say','tellraw']}));
+app.post('/api/reset',(q,r)=>{sessions.set(q.body.sessionId||'default',fresh());r.json({ok:true})});
+app.post('/api/upload',upload.single('datapack'),async(q,r)=>{try{if(!q.file)throw Error('Choose a ZIP');const s=fresh();await loadZip(q.file.buffer,s);sessions.set(q.body.sessionId||'default',s);r.json({ok:true,state:snap(s)})}catch(e){r.status(400).json({error:e.message})}});
+app.post('/api/run',(q,r)=>{const s=sessions.get(q.body.sessionId||'default');if(!s)return r.status(404).json({error:'Upload a datapack first'});s.runCount=0;run(s,q.body.function,{pos:q.body.origin||[0,64,0],entity:null});r.json({ok:true,state:snap(s)})});
+app.post('/api/tick',(q,r)=>{const s=sessions.get(q.body.sessionId||'default');if(!s)return r.status(404).json({error:'Upload a datapack first'});s.runCount=0;for(const f of q.body.functions||[])run(s,f,{pos:[0,64,0],entity:null});r.json({ok:true,state:snap(s)})});
+app.get('/api/state',(q,r)=>r.json(snap(sessions.get(q.query.sessionId||'default')||fresh())));
+app.post('/mcp',(q,r)=>{const m=q.body||{},id=m.id??null,reply=result=>r.json({jsonrpc:'2.0',id,result}),err=(code,message)=>r.json({jsonrpc:'2.0',id,error:{code,message}});if(m.method==='initialize')return reply({protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'minecraft-datapack-lab',version:'2.0.0'}});if(m.method==='notifications/initialized')return r.status(202).end();if(m.method==='ping')return reply({});if(m.method==='tools/list')return reply({tools:[{name:'get_sandbox_state',description:'Inspect preview world, functions, scores and logs.',inputSchema:{type:'object',properties:{sessionId:{type:'string'}}}},{name:'run_function',description:'Run a loaded namespaced function.',inputSchema:{type:'object',properties:{sessionId:{type:'string'},function:{type:'string'},origin:{type:'array',items:{type:'number'}}},required:['function']}},{name:'reset_world',description:'Reset preview world.',inputSchema:{type:'object',properties:{sessionId:{type:'string'}}}}]});if(m.method==='tools/call'){const a=m.params?.arguments||{},sid=a.sessionId||'default',s=sessions.get(sid),name=m.params?.name;if(name==='get_sandbox_state')return reply({content:[{type:'text',text:JSON.stringify(snap(s||fresh()))}]});if(name==='reset_world'){sessions.set(sid,fresh());return reply({content:[{type:'text',text:'World reset'}]})}if(name==='run_function'){if(!s)return err(-32004,'Upload a datapack in the website first');s.runCount=0;run(s,a.function,{pos:a.origin||[0,64,0],entity:null});return reply({content:[{type:'text',text:JSON.stringify(snap(s))}]})}}return err(-32601,'Method not found')});
+app.get('/mcp',(q,r)=>r.json({name:'Minecraft Datapack Lab MCP',endpoint:'/mcp',transport:'HTTP JSON-RPC',method:'POST'}));
+app.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('Datapack Lab v2 started'));
