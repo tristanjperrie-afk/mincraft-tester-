@@ -218,10 +218,10 @@ function runCommand(w, line, ctx, stack) {
       const edge = x===lo[0]||x===hi[0]||y===lo[1]||y===hi[1]||z===lo[2]||z===hi[2];
       const old = blockAt(w,[x,y,z]);
       if (mode==='keep' && old!=='minecraft:air') continue;
+      if (mode==='replace' && t[9] && old!==t[9]) continue;
       if (mode==='outline' && !edge) continue;
       if (mode==='hollow' && !edge) putBlock(w,[x,y,z],'air');
       else if (mode==='replace' || mode==='destroy' || mode==='outline' || mode==='hollow' || mode==='keep') putBlock(w,[x,y,z],block);
-      else if (mode==='replace' && t[9] && old!==t[9]) continue;
       else throw new Error('Unsupported fill mode: '+mode);
       changed++;
     }
