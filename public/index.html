@@ -68,12 +68,12 @@ a{color:var(--blue)}@media(max-width:850px){main{grid-template-columns:1fr}#view
 <div class="panel" style="margin-top:14px"><h2>Execution log</h2><div id="logs" class="small">No commands executed.</div></div>
 </section>
 </main>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js"}}</script>
 <script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js';
+import * as THREE from 'three';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/controls/OrbitControls.js';
 const $=id=>document.getElementById(id);
-const sessionId=localStorage.getItem('mdpl-session')||crypto.randomUUID();
-localStorage.setItem('mdpl-session',sessionId);
+const sessionId='default';
 $('mcpurl').textContent=location.origin+'/mcp';
 let state={blocks:[],entities:[],functions:[],logs:[],runCount:0};
 async function api(url,options={}){const response=await fetch(url,options);const data=await response.json();if(!response.ok)throw new Error(data.error||'Request failed');return data;}
@@ -89,8 +89,9 @@ const worldGroup=new THREE.Group();scene.add(worldGroup);
 const colors={stone:0x92999f,grass_block:0x57924c,dirt:0x79543a,oak_planks:0xb18a55,glass:0x9dd8dc,bricks:0x98594c,white_concrete:0xd8d8d2,oak_log:0x765331,cobblestone:0x777d80,sand:0xd8c58b,water:0x397fc4};
 function resize(){const box=$('viewer').getBoundingClientRect();renderer.setSize(box.width,box.height,false);camera.aspect=box.width/box.height;camera.updateProjectionMatrix();}
 window.addEventListener('resize',resize);resize();
+let cameraInitialized=false;
 function renderWorld(){while(worldGroup.children.length){const child=worldGroup.children.pop();child.geometry?.dispose();if(child.material){if(Array.isArray(child.material))child.material.forEach(m=>m.dispose());else child.material.dispose();}}
-const cap=25000;const shown=state.blocks.slice(0,cap);
+const cap=25000;const shown=state.blocks.slice(0,cap);if(shown.length&&!cameraInitialized){const xs=shown.map(b=>b.pos[0]),ys=shown.map(b=>b.pos[1]),zs=shown.map(b=>b.pos[2]);const min=[Math.min(...xs),Math.min(...ys),Math.min(...zs)],max=[Math.max(...xs),Math.max(...ys),Math.max(...zs)];const center=[(min[0]+max[0])/2,(min[1]+max[1])/2,(min[2]+max[2])/2];const span=Math.max(max[0]-min[0],max[1]-min[1],max[2]-min[2],8);controls.target.set(...center);camera.position.set(center[0]+span*1.25,center[1]+span*.9,center[2]+span*1.5);grid.position.y=min[1]-.51;cameraInitialized=true;controls.update();}
 const groups=new Map();
 for(const b of shown){const name=String(b.block).split(':').pop().split('[')[0];if(!groups.has(name))groups.set(name,[]);groups.get(name).push(b);}
 for(const [name,items] of groups){const material=new THREE.MeshStandardMaterial({color:colors[name]||0x8495a3,roughness:.85});const mesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),material,items.length);const dummy=new THREE.Object3D();items.forEach((item,i)=>{dummy.position.set(item.pos[0],item.pos[1],item.pos[2]);dummy.updateMatrix();mesh.setMatrixAt(i,dummy.matrix);});mesh.instanceMatrix.needsUpdate=true;mesh.castShadow=true;mesh.receiveShadow=true;worldGroup.add(mesh);}
@@ -104,7 +105,7 @@ $('logs').innerHTML='';if(!state.logs.length)$('logs').textContent='No commands 
 $('upload').onclick=async()=>{try{const file=$('file').files[0];if(!file)throw new Error('Choose a datapack ZIP first.');const form=new FormData();form.append('datapack',file);form.append('sessionId',sessionId);$('upload').disabled=true;$('status').textContent='Uploading and parsing…';const result=await api('/api/upload',{method:'POST',body:form});show(result.state);$('status').textContent='Datapack loaded successfully.';}catch(e){$('status').textContent=e.message;}finally{$('upload').disabled=false;}};
 $('run').onclick=async()=>{try{const fn=$('fn').value.trim();if(!fn)throw new Error('Choose a function from the list or enter its namespaced ID.');const result=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId,function:fn})});show(result.state);}catch(e){$('status').textContent=e.message;}};
 $('tick').onclick=async()=>{try{const result=await api('/api/tick',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId})});show(result.state);}catch(e){$('status').textContent=e.message;}};
-$('reset').onclick=async()=>{try{await api('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId})});show({});$('status').textContent='World reset.';}catch(e){$('status').textContent=e.message;}};
+$('reset').onclick=async()=>{try{await api('/api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId})});cameraInitialized=false;show({});$('status').textContent='World reset.';}catch(e){$('status').textContent=e.message;}};
 api('/api/state?sessionId='+encodeURIComponent(sessionId)).then(show).catch(()=>{});
 renderer.setAnimationLoop(()=>{controls.update();renderer.render(scene,camera);});
 </script>
